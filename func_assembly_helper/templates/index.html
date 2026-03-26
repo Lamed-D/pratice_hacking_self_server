@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assembly Simulator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .tooltip-banner {
+            background: rgba(203, 166, 247, 0.1);
+            color: var(--accent);
+            padding: 8px 16px;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            border-bottom: 1px solid var(--border);
+            min-height: 20px;
+        }
+        .console-viewer {
+            flex: 0.5;
+            background: #000;
+            color: #a6e3a1;
+            font-family: var(--font-mono);
+            padding: 8px 16px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 0.85rem;
+        }
+        .mode-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .tabs { display: flex; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+        .tab-btn { flex: 1; padding: 6px; background: none; border: none; color: var(--text-muted); cursor: pointer; text-transform: uppercase; font-size: 0.75rem; font-weight: bold; }
+        .tab-btn.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <span class="dots"><i class="dot red"></i><i class="dot yellow"></i><i class="dot green"></i></span>
+                <h1>Func Assembly Helper</h1>
+            </div>
+            <div class="controls">
+                <select id="mode-select" class="dropdown">
+                    <option value="cpp">C++ Source</option>
+                    <option value="asm">Custom ASM</option>
+                </select>
+                <select id="compiler-select" class="dropdown">
+                    <option value="gcc_x64">GCC (x64)</option>
+                    <option value="msvc_x64">MSVC (x64)</option>
+                    <option value="gcc_x86">GCC (x86)</option>
+                    <option value="msvc_x86">MSVC (x86)</option>
+                </select>
+                <button id="btn-cheatsheet" class="icon-btn">📖 Cheatsheet</button>
+                <div class="divider"></div>
+                <button id="btn-compile" class="primary-btn">Compile & Load</button>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="speed-control">
+                        <span>Speed</span>
+                        <input type="range" id="speed-slider" min="50" max="1000" value="500" style="width: 80px;">
+                    </div>
+                    <button id="btn-play" class="icon-btn" disabled>▶ Play</button>
+                    <button id="btn-restart" class="icon-btn" disabled>⏮ Restart</button>
+                    <button id="btn-reset" class="icon-btn">↺ Reload</button>
+                    <input type="range" id="timeline-slider" min="0" max="0" value="0" style="width: 150px; margin: 0 10px;" disabled title="Timeline Scrubber">
+                    <button id="btn-prev" class="primary-btn" disabled>← Prev</button>
+                    <button id="btn-step" class="primary-btn" disabled>Next ➔</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <div id="live-tooltip" class="tooltip-banner">Simulation not started.</div>
+        <main class="workspace">
+            <!-- Left: Code & Assembly -->
+            <section class="panel code-panel">
+                <div class="panel-header" id="source-panel-header" style="display: flex; align-items: center;">
+                    C++ SOURCE (.cpp)
+                    <button id="btn-format" class="icon-btn" style="margin-left:auto; padding: 2px 8px; font-size: 0.7rem; color: var(--accent);">🪄 Format</button>
+                </div>
+                <div id="cpp-container" style="display:flex; flex:1; flex-direction:column; overflow:hidden;">
+                    <div id="source-editor" class="code-editor" style="width: 100%; height: 100%;">#include &lt;stdio.h&gt;
+int add(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    printf("Hello World\n");
+    int result = add(3, 5);
+    return 0;
+}</div>
+                </div>
+                <textarea id="raw-asm-editor" spellcheck="false" class="code-editor" style="display:none;">
+; Custom x86-64 assembly
+_start:
+    mov rax, 1
+    mov rdi, 1
+    ; write your asm here
+</textarea>
+                
+                <div class="panel-header" style="border-top: 1px solid var(--border);">ASSEMBLY (x86-64)</div>
+                <div id="assembly-view" class="asm-viewer" style="flex: 1.5;">
+                    <div class="empty-state">No assembly code yet.<br>Click Compile to generate.</div>
+                </div>
+
+                <div style="display:flex; flex: 0.5;">
+                    <div style="flex:1; display:flex; flex-direction:column; border-right: 1px solid var(--border);">
+                        <div class="panel-header" style="border-top: 1px solid var(--border);">CONSOLE OUTPUT</div>
+                        <div id="console-output" class="console-viewer" style="flex:1;"></div>
+                    </div>
+                    <div style="flex:1; display:flex; flex-direction:column;">
+                        <div class="panel-header" style="border-top: 1px solid var(--border);">STDIN (sys_read / scanf)</div>
+                        <textarea id="stdin-input" spellcheck="false" class="code-editor" style="flex:1; background:#000; font-size:0.85rem; padding:8px 16px;" placeholder="Type mock input here..."></textarea>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Middle: Registers & Flags -->
+            <section class="panel register-panel">
+                <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                    REGISTERS & Flags
+                    <button id="btn-hex-toggle" class="icon-btn" style="padding: 2px 8px; font-size: 0.7rem;">HEX</button>
+                </div>
+                <div id="flags-view" style="display: flex; gap: 8px; justify-content: space-evenly; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); padding: 8px;">
+                    <!-- flags auto-populates here -->
+                </div>
+                <div class="register-list" id="register-list">
+                    <div class="empty-state">Awaiting compilation...</div>
+                </div>
+            </section>
+
+            <!-- Right: Stack & Data -->
+            <section class="panel stack-panel">
+                <div class="tabs">
+                    <button class="tab-btn active" id="tab-stack">STACK MEMORY</button>
+                    <button class="tab-btn" id="tab-data">DATA SEGMENT</button>
+                    <button class="tab-btn" id="tab-mmap">MEMORY MAP</button>
+                </div>
+                
+                <!-- Stack View -->
+                <div id="stack-container" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+                    <div class="stack-view" id="stack-view" style="flex:1; overflow-y:auto;">
+                        <div class="empty-state">Awaiting compilation...</div>
+                    </div>
+                    <div class="stack-direction">Low Addr ↓</div>
+                </div>
+                
+                <!-- Data View -->
+                <div id="data-container" style="display: none; flex-direction: column; flex: 1; overflow: auto;">
+                    <div class="stack-view" id="data-view" style="flex:1; padding: 16px;">
+                        <div class="empty-state">No data segments found.</div>
+                    </div>
+                </div>
+
+                <!-- MMap View -->
+                <div id="mmap-container" style="display: none; flex-direction: column; flex: 1; overflow: auto; background: rgba(0,0,0,0.3); padding: 16px;">
+                    <div id="mmap-view" style="font-family: var(--font-mono); font-size: 0.85em; line-height: 1.6;">
+                        <div class="empty-state">No memory blocks.</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Cheatsheet Modal -->
+    <div id="cheatsheet-modal" class="modal">
+        <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+            <span class="close-btn">&times;</span>
+            <h2>Assembly Cheatsheet</h2>
+            <div class="cheat-grid">
+                <div style="grid-column: span 2;">
+                    <h3 style="border-bottom-color: var(--success)">x86-64 (64-bit) Calling Convention</h3>
+                    <p><b>Arguments:</b> 1st: <b>RDI</b>, 2nd: <b>RSI</b>, 3rd: <b>RDX</b>, 4th: <b>RCX</b>, 5th: <b>R8</b>, 6th: <b>R9</b></p>
+                    <p><b>Caller-saved:</b> RAX, RCX, RDX, RDI, RSI, R8-R11</p>
+                    <p><b>Callee-saved:</b> RBX, RBP, R12-R15</p>
+                    <p><b>Return Value:</b> RAX</p>
+                </div>
+                <div style="grid-column: span 2;">
+                    <h3 style="border-bottom-color: var(--success)">x86 (32-bit) Calling Conventions</h3>
+                    <div style="display: grid; gap: 8px;">
+                      <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        <b style="color:var(--accent)">cdecl</b> (C default)<br>
+                        - Args: <b>Stack</b> (Right-to-Left)<br>
+                        - Stack Cleanup: <b>Caller</b>
+                      </div>
+                      <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        <b style="color:var(--accent)">stdcall</b> (WinAPI)<br>
+                        - Args: <b>Stack</b> (Right-to-Left)<br>
+                        - Stack Cleanup: <b>Callee</b> (using <code>ret N</code>)
+                      </div>
+                      <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        <b style="color:var(--accent)">fastcall</b><br>
+                        - Args: 1st: <b style="color:var(--success)">ECX</b>, 2nd: <b style="color:var(--success)">EDX</b>, Rest: <b>Stack</b><br>
+                        - Stack Cleanup: <b>Callee</b>
+                      </div>
+                    </div>
+                    <p style="margin-top: 10px;"><b>Caller-saved (x86):</b> EAX, ECX, EDX &nbsp;&nbsp;|&nbsp;&nbsp; <b>Return Value:</b> EAX</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ext-beautify.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
